@@ -1,0 +1,48 @@
+Import-Module ActiveDirectory
+
+# Create a new event log source
+if (-not [System.Diagnostics.EventLog]::SourceExists("ADManagerScript")) {
+    New-EventLog -LogName Application -Source "ADManagerScript"
+}
+
+# Set variables
+$Username = "vedney"
+$DeletionDate = "01/15/2024 11:00:00 AM"
+$LogFolder = "C:\Temp"
+$EmailAddress = "support@digicorpproductions.com"
+$EmailSubject = "ADUser $Username did not delete from AD manager"
+
+# Schedule task to delete ADUser and log results
+$Trigger = New-ScheduledTaskTrigger -At $DeletionDate -Once
+$Action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -Command `"& {
+    Import-Module ActiveDirectory
+    $Username = '$Username'
+    try {
+        Remove-ADUser -Identity $Username -Confirm:$false
+        Write-Host 'ADUser deleted successfully.'
+    } catch {
+        Write-Host 'Error: Failed to delete ADUser.'
+    }
+    finally {
+        Write-Host 'Deleting task...'
+        Unregister-ScheduledTask -TaskName 'DeleteADUserTask' -Confirm:$false
+    }
+}`"
+$TaskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+$Task = New-ScheduledTask -Action $Action -Trigger $Trigger -Settings $TaskSettings
+Register-ScheduledTask -TaskName "DeleteADUserTask" -InputObject $Task
+
+# Monitor deletion and log results
+do {
+    $DeletionResult = Get-WinEvent -LogName Application -FilterXPath "*[System[Provider[@Name='ADManagerScript'] and EventID=100]]" -MaxEvents 1
+    if ($DeletionResult) {
+        Write-Host 'ADUser deletion task executed.'
+        break
+    }
+    Start-Sleep -Seconds 60
+} while ((Get-Date) -lt $DeletionDate)
+
+if (-not $DeletionResult) {
+    Write-Host 'ADUser deletion task not executed.'
+    Send-MailMessage -To $EmailAddress -Subject $EmailSubject -Body "Error: ADUser '$Username' did not delete from AD manager." -SmtpServer "smtp.office365.com" -Port 587 -UseSsl -Credential (Get-Credential (Get-ADUser -Identity $Username).DistinguishedName)
+}
