@@ -1,0 +1,89 @@
+import subprocess
+import ipaddress
+import re
+
+
+def validate_domain_name(domain):
+    """
+    Validate domain name format
+    """
+    domain_regex = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+$')
+    return domain_regex.match(domain) is not None
+
+
+def validate_ip_address(ip):
+    """
+    Validate IP address format
+    """
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+
+def install_ad_features():
+    """
+    Install Active Directory Domain Services
+    """
+    try:
+        subprocess.run(["powershell", "Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools"],
+                       check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing AD features: {e}")
+        return False
+    return True
+
+
+def create_ad_forest(domain_name, network_address):
+    """
+    Create Active Directory Forest and Domain
+    """
+    if not validate_domain_name(domain_name):
+        print("Invalid domain name format")
+        return False
+
+    if not validate_ip_address(network_address):
+        print("Invalid network address")
+        return False
+
+    if not install_ad_features():
+        return False
+
+    try:
+        # Install AD Forest and first Domain Controller
+        install_cmd = [
+            "powershell",
+            "Install-ADDSForest",
+            "-DomainName", domain_name,
+            "-DomainNetbiosName", domain_name.split('.')[0].upper(),
+            "-InstallDNS",
+            "-Force"
+        ]
+
+        result = subprocess.run(install_cmd, capture_output=True, text=True, check=True)
+        print("AD Forest and Domain created successfully!")
+        return True
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error creating AD Forest: {e.stderr}")
+        return False
+
+
+def main():
+    print("Active Directory Forest and Domain Creation Tool")
+
+    while True:
+        domain_name = input("Enter domain name (e.g., adcompany.local): ")
+        network_address = input("Enter network address (e.g., 10.0.0.3): ")
+
+        if create_ad_forest(domain_name, network_address):
+            break
+
+        choice = input("Do you want to try again? (y/n): ").lower()
+        if choice != 'y':
+            break
+
+
+if __name__ == "__main__":
+    main()
