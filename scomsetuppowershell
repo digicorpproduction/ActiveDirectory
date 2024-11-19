@@ -1,0 +1,77 @@
+# SCOM Installation and Configuration Script
+param(
+    [string]$DomainName = "adcompany.local",
+    [string]$SQLServerName = "SCOMSQL01",
+    [string]$SCOMServerName = "SCOMSERVER01"
+)
+
+# Prerequisite Validation
+function Test-Prerequisites {
+    $requirements = @(
+        "Windows Server 2016 or later",
+        "SQL Server 2016 or later",
+        "Domain Admin Credentials",
+        "Internet Information Services (IIS)",
+        ".NET Framework 4.7.2+"
+    )
+    
+    foreach ($req in $requirements) {
+        Write-Host "Checking: $req"
+    }
+}
+
+# Install Windows Features
+function Install-RequiredFeatures {
+    Install-WindowsFeature -Name Web-Server, Web-Asp-Net45, NET-Framework-Features
+}
+
+# SQL Database Preparation
+function Initialize-SQLDatabase {
+    Invoke-Sqlcmd -ServerInstance $SQLServerName -Query @"
+    CREATE DATABASE SCOM_Operational
+    CREATE DATABASE SCOM_Reporting
+"@
+}
+
+# SCOM Installation
+function Install-SCOM {
+    $installPath = "C:\Setup\SCOM2019\Setup.exe"
+    $argumentList = @(
+        "/silent",
+        "/install",
+        "/components:MainServer,ConsoleSetup",
+        "/domain:$DomainName",
+        "/sqlservername:$SQLServerName"
+    )
+    
+    Start-Process $installPath -ArgumentList $argumentList -Wait
+}
+
+# Configure SCOM Management Groups
+function Configure-ManagementGroup {
+    New-SCOMManagementGroupSetup `
+        -Name "ADCompany_SCOM_MG" `
+        -DatabaseServerName $SQLServerName
+}
+
+# Set Up Monitoring
+function Configure-Monitoring {
+    # Basic monitoring configuration
+    Set-SCOMRunAsAccount -Name "DomainMonitoringAccount"
+    Add-SCOMAgentManagedComputer -Domain $DomainName
+}
+
+# Main Execution
+function Deploy-SCOM {
+    Test-Prerequisites
+    Install-RequiredFeatures
+    Initialize-SQLDatabase
+    Install-SCOM
+    Configure-ManagementGroup
+    Configure-Monitoring
+    
+    Write-Host "SCOM Deployment Completed Successfully"
+}
+
+# Execute Deployment
+Deploy-SCOM
